@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+
+#scroller{
+
+    white-space: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    position: relative;
+    z-index: 100;
+  }
+  
+  #scroller::-webkit-scrollbar {
+    display: none;
+  }
+  
+
+  #scroller h4{
+    display: inline-block;
+    /* font-size: 146px; */
+    color: transparent;
+    color: black;
+    font-family: "CustomFontName",gilroy;
+    margin-right: 20px;
+    font-weight: 900;
+    text-transform: uppercase;
+    position: relative;
+    transition: all linear 0.3s;
+    -webkit-text-stroke: 2px white;
+    
+  }
+  #scroller h4:hover {
+    color: greenyellow;
+    -webkit-text-stroke: 2px greenyellow;
+  }
+  
+  
+  @keyframes scroll{
+    from{
+      transform: translateX(0);
+    }
+    to{
+      transform: translateX(-100%);
+    }
+  }
+  
+  
+  #scroller-in{
+    display: inline-block;
+    white-space: nowrap;
+    animation-name: scroll;
+    animation-iteration-count: infinite;
+    animation-duration: 40s; 
+  }

@@ -22,32 +22,38 @@ if ($db_connection_error) {
     $error_message = "Database connection error: " . $db_error_message;
 } else {
     // Prepare query based on filters
-    $sql = "SELECT * FROM coupons WHERE user_id = :user_id";
+    $sql = "SELECT c.*, 
+            CASE WHEN c.user_id = :user_id THEN 0 ELSE 1 END AS is_shared,
+            CASE WHEN c.user_id != :user_id THEN (SELECT name FROM users WHERE id = c.user_id) ELSE NULL END AS shared_by
+            FROM coupons c 
+            WHERE c.user_id = :user_id OR c.id IN (
+                SELECT coupon_id FROM shared_coupons WHERE recipient_id = :user_id
+            )";
 
     // Add search condition if provided
     if(!empty($search)) {
-        $sql .= " AND (coupon_name LIKE :search OR category LIKE :search OR store LIKE :search OR coupon_code LIKE :search)";
+        $sql .= " AND (c.coupon_name LIKE :search OR c.category LIKE :search OR c.store LIKE :search OR c.coupon_code LIKE :search)";
     }
 
     // Add category filter if provided
     if(!empty($filter)) {
-        $sql .= " AND category = :filter";
+        $sql .= " AND c.category = :filter";
     }
 
     // Add sorting
     switch($sort) {
         case 'expiry_desc':
-            $sql .= " ORDER BY expiry_date DESC";
+            $sql .= " ORDER BY CASE WHEN c.expiry_date < CURDATE() THEN 1 ELSE 0 END, c.expiry_date DESC";
             break;
         case 'discount_desc':
-            $sql .= " ORDER BY discount DESC";
+            $sql .= " ORDER BY CASE WHEN c.expiry_date < CURDATE() THEN 1 ELSE 0 END, c.discount DESC";
             break;
         case 'discount_asc':
-            $sql .= " ORDER BY discount ASC";
+            $sql .= " ORDER BY CASE WHEN c.expiry_date < CURDATE() THEN 1 ELSE 0 END, c.discount ASC";
             break;
         case 'expiry_asc':
         default:
-            $sql .= " ORDER BY expiry_date ASC";
+            $sql .= " ORDER BY CASE WHEN c.expiry_date < CURDATE() THEN 1 ELSE 0 END, c.expiry_date ASC";
             break;
     }
 
@@ -70,7 +76,7 @@ if ($db_connection_error) {
     } catch(PDOException $e) {
         $error_message = "Error fetching coupons: " . $e->getMessage();
     }
-
+        
     // Get available categories for filter dropdown
     try {
         $cat_stmt = $pdo->prepare("SELECT DISTINCT category FROM coupons WHERE user_id = :user_id");
@@ -80,7 +86,7 @@ if ($db_connection_error) {
     } catch(PDOException $e) {
         $categories = [];
     }
-
+    
     // Get all predefined categories from the categories table
     try {
         $all_cat_stmt = $pdo->query("SELECT name FROM categories ORDER BY name");
@@ -89,8 +95,18 @@ if ($db_connection_error) {
         $all_categories = [];
     }
 }
-?>
 
+// Get unread notification count
+$notification_count = 0;
+try {
+    $notif_stmt = $pdo->prepare("SELECT COUNT(*) FROM notifications WHERE user_id = :user_id AND is_read = 0");
+    $notif_stmt->bindParam(":user_id", $_SESSION["user_id"], PDO::PARAM_INT);
+    $notif_stmt->execute();
+    $notification_count = $notif_stmt->fetchColumn();
+} catch(PDOException $e) {
+    // Silently fail
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -99,7 +115,6 @@ if ($db_connection_error) {
     <title>Dashboard - Digital Coupon Organizer</title>
     <link href="../output.css" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
-
     <style>
         .coupon-card {
             transition: transform 0.3s ease, box-shadow 0.3s ease;
@@ -122,7 +137,6 @@ if ($db_connection_error) {
     <div id="copy-success" class="fixed top-4 right-4 bg-lime-500 text-black rounded-lg px-4 py-2 z-50 hidden">
         Coupon code copied!
     </div>
-
     <!-- Navbar -->
     <header class="py-4 lg:py-6 border-b border-white/10">
         <div class="max-w-7xl mx-auto px-4 lg:px-8">
@@ -133,15 +147,23 @@ if ($db_connection_error) {
                     </a>
                     <nav class="hidden md:flex ml-10 space-x-8">
                         <a href="dashboard.php" class="text-lime-400 hover:text-lime-400">Dashboard</a>
+                        <a href="notifications.php" class="text-white/70 hover:text-lime-400 relative">
+                            Notifications
+                            <?php if($notification_count > 0): ?>
+                                <span class="absolute -top-2 -right-2 flex items-center justify-center bg-lime-400 text-black rounded-full w-5 h-5 text-xs font-bold"><?php echo $notification_count; ?></span>
+                            <?php endif; ?>
+                        </a>
                         <a href="faqs.php" class="text-white/70 hover:text-lime-400">FAQs</a>
                     </nav>
                 </div>
-                
                 <div class="flex items-center gap-6">
-                    <!-- Mobile menu button -->
-                    <button id="mobile-menu-button" class="md:hidden text-white">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
-                    </button>
+                    <!-- Notification bell (mobile) -->
+                    <a href="notifications.php" class="md:hidden relative text-white/70 hover:text-lime-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                        <?php if($notification_count > 0): ?>
+                            <span class="absolute -top-2 -right-2 flex items-center justify-center bg-lime-400 text-black rounded-full w-5 h-5 text-xs font-bold"><?php echo $notification_count; ?></span>
+                        <?php endif; ?>
+                    </a>
                     
                     <div class="relative">
                         <button id="user-menu-button" class="flex items-center gap-2 text-sm focus:outline-none">
@@ -151,7 +173,6 @@ if ($db_connection_error) {
                             <span class="hidden md:block"><?php echo htmlspecialchars($_SESSION["name"]); ?></span>
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
                         </button>
-                        
                         <!-- Dropdown menu -->
                         <div id="user-dropdown" class="hidden absolute right-0 mt-2 w-48 rounded-lg bg-neutral-900 border border-white/10 shadow-lg py-1 z-10">
                             <a href="profile.php" class="block px-4 py-2 text-sm hover:bg-white/5">Profile</a>
@@ -162,7 +183,6 @@ if ($db_connection_error) {
                     </div>
                 </div>
             </div>
-            
             <!-- Mobile menu -->
             <div id="mobile-menu" class="md:hidden hidden pt-4 pb-3 border-t border-white/10 mt-4">
                 <div class="space-y-1">
@@ -181,13 +201,25 @@ if ($db_connection_error) {
             </div>
         <?php endif; ?>
 
+        <?php if(isset($_GET['error'])): ?>
+            <div class="bg-red-500/20 border border-red-500 text-white px-4 py-3 rounded-lg mb-6">
+                <?php echo htmlspecialchars($_GET['error']); ?>
+            </div>
+        <?php endif; ?>
+
         <?php if(isset($_GET['success']) && $_GET['success'] === 'coupon_marked_used'): ?>
             <div class="bg-lime-500/20 border border-lime-500 text-white px-4 py-3 rounded-lg mb-6">
                 Coupon has been marked as used successfully.
             </div>
         <?php endif; ?>
-
-        <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-8 ">
+        
+        <?php if(isset($_GET['success']) && $_GET['success'] === 'coupon_shared'): ?>
+            <div class="bg-blue-500/20 border border-blue-500 text-white px-4 py-3 rounded-lg mb-6 pulsing-blue">
+                Coupon has been shared successfully!
+            </div>
+        <?php endif; ?>
+        
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
             <div>
                 <h1 class="text-3xl font-medium text-lime-400">Your Coupons</h1>
                 <p class="text-white/50 mt-1">Manage all your discount coupons in one place</p>
@@ -197,7 +229,7 @@ if ($db_connection_error) {
                 Add New Coupon
             </button>
         </div>
-        
+
         <!-- Filters and Search -->
         <div class="bg-neutral-900 rounded-xl border border-white/10 p-4 mb-8">
             <form id="filter-form" class="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -233,7 +265,7 @@ if ($db_connection_error) {
                 </div>
             </form>
         </div>
-        
+
         <!-- Coupons Grid -->
         <div id="coupons-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <?php if(!isset($coupons) || empty($coupons)): ?>
@@ -254,11 +286,14 @@ if ($db_connection_error) {
                     $is_expired = strtotime($coupon['expiry_date']) < time();
                     $days_left = round((strtotime($coupon['expiry_date']) - time()) / (60 * 60 * 24));
                     $is_used = $coupon['is_used'] == 1;
+                    $is_shared = isset($coupon['is_shared']) && $coupon['is_shared'] == 1;
+                    $border_class = $is_expired ? 'border-red-500/50' : ($is_used ? 'border-gray-500/50 opacity-60' : 'border-white/10');
+                    $highlight_color = $is_expired ? 'red' : ($is_used ? 'gray' : 'lime');
                     ?>
-                    <div class="coupon-card bg-neutral-900 rounded-xl border <?php echo $is_expired ? 'border-red-500/50' : ($is_used ? 'border-gray-500/50 opacity-60' : 'border-white/10'); ?> overflow-hidden group">
+                    <div class="coupon-card bg-neutral-900 rounded-xl border <?php echo $border_class; ?> overflow-hidden group">
                         <div class="flex items-center justify-between px-4 py-3 border-b border-white/10">
                             <div class="flex items-center">
-                                <span class="inline-flex items-center justify-center size-10 rounded-lg bg-<?php echo $is_expired ? 'red' : ($is_used ? 'gray' : 'lime'); ?>-400/10 text-<?php echo $is_expired ? 'red' : ($is_used ? 'gray' : 'lime'); ?>-400">
+                                <span class="inline-flex items-center justify-center size-10 rounded-lg bg-<?php echo $highlight_color; ?>-400/10 text-<?php echo $highlight_color; ?>-400">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
                                 </span>
                                 <div class="ml-3">
@@ -267,12 +302,12 @@ if ($db_connection_error) {
                                 </div>
                             </div>
                             <div class="text-right">
-                                <div class="text-xl font-bold text-<?php echo $is_expired ? 'red' : ($is_used ? 'gray' : 'lime'); ?>-400"><?php echo $coupon['discount']; ?>%</div>
+                                <div class="text-xl font-bold text-<?php echo $highlight_color; ?>-400"><?php echo $coupon['discount']; ?>%</div>
                                 <div class="text-xs text-white/50"><?php echo $is_expired ? 'Expired' : ($is_used ? 'Used' : ($days_left == 0 ? 'Expires today' : ($days_left == 1 ? '1 day left' : $days_left.' days left'))); ?></div>
                             </div>
                         </div>
                         
-                        <div class="p-4">
+                        <div class="p-4 <?php echo $is_shared ? 'bg-gradient-to-b from-neutral-900 to-blue-950/30' : ''; ?>">
                             <div class="flex justify-between items-center mb-3">
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-white/10"><?php echo htmlspecialchars($coupon['category']); ?></span>
                                 <span class="text-sm text-white/50">Expires: <?php echo date('M d, Y', strtotime($coupon['expiry_date'])); ?></span>
@@ -297,6 +332,9 @@ if ($db_connection_error) {
                                     <button class="delete-coupon-btn text-white/70 hover:text-red-500" data-id="<?php echo $coupon['id']; ?>">
                                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                                     </button>
+                                    <button class="share-coupon-btn text-white/70 hover:text-blue-400" data-id="<?php echo $coupon['id']; ?>" data-name="<?php echo htmlspecialchars($coupon['coupon_name']); ?>">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+                                    </button>
                                 </div>
                                 
                                 <?php if(!$is_expired && !$is_used): ?>
@@ -315,7 +353,7 @@ if ($db_connection_error) {
             <?php endif; ?>
         </div>
     </main>
-    
+
     <!-- Add/Edit Coupon Modal -->
     <div id="coupon-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
         <div class="absolute inset-0 bg-black/70"></div>
@@ -327,7 +365,6 @@ if ($db_connection_error) {
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                     </button>
                 </div>
-                
                 <form id="coupon-form" action="add_coupon.php" method="post" class="space-y-4">
                     <input type="hidden" id="coupon_id" name="coupon_id" value="">
                     
@@ -346,7 +383,6 @@ if ($db_connection_error) {
                             <label for="discount" class="block text-sm font-medium mb-2">Discount (%)</label>
                             <input type="number" id="discount" name="discount" min="0" max="100" step="0.01" class="w-full bg-neutral-800 border border-white/10 rounded-lg px-4 py-3" required>
                         </div>
-                        
                         <div>
                             <label for="expiry_date" class="block text-sm font-medium mb-2">Expiry Date</label>
                             <input type="date" id="expiry_date" name="expiry_date" class="w-full bg-neutral-800 border border-white/10 rounded-lg px-4 py-3 appearance-none" required>
@@ -361,6 +397,7 @@ if ($db_connection_error) {
                     <div>
                         <label for="category" class="block text-sm font-medium mb-2">Category</label>
                         <select id="category" name="category" class="w-full bg-neutral-800 border border-white/10 rounded-lg px-4 py-3 text-white appearance-none" required>
+                            <option value="">Select Category</option>
                             <?php if (isset($all_categories)): ?>
                                 <?php foreach($all_categories as $cat): ?>
                                     <option value="<?php echo htmlspecialchars($cat); ?>"><?php echo htmlspecialchars($cat); ?></option>
@@ -403,14 +440,37 @@ if ($db_connection_error) {
             <div class="bg-neutral-900 rounded-2xl border border-white/10 p-6 w-full max-w-md relative mx-auto my-8">
                 <h3 class="text-xl font-medium mb-4">Delete Coupon</h3>
                 <p class="text-white/70 mb-6">Are you sure you want to delete this coupon? This action cannot be undone.</p>
-                
-                <div class="flex flex-col sm:flex-row gap-4">
+                <form id="delete-form" action="delete_coupon.php" method="post" class="flex flex-col sm:flex-row gap-4">
+                    <input type="hidden" id="delete_coupon_id" name="coupon_id">
                     <button id="cancel-delete" class="flex-1 bg-white/10 text-white font-medium py-3 rounded-lg hover:bg-white/15 transition-colors">Cancel</button>
-                    <form id="delete-form" action="delete_coupon.php" method="post" class="flex-1">
-                        <input type="hidden" id="delete_coupon_id" name="coupon_id">
-                        <button type="submit" class="w-full bg-red-500 text-white font-medium py-3 rounded-lg hover:bg-red-600 transition-colors">Delete</button>
-                    </form>
-                </div>
+                    <button type="submit" class="flex-1 bg-red-500 text-white font-medium py-3 rounded-lg hover:bg-red-600 transition-colors">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Share Coupon Modal -->
+    <div id="share-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+        <div class="absolute inset-0 bg-black/70"></div>
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-neutral-900 rounded-2xl border border-blue-500/30 shadow-[0_0_20px_rgba(59,130,246,0.3)] p-6 w-full max-w-md relative mx-auto my-8">
+                <h3 class="text-xl font-medium mb-4">Share Coupon</h3>
+                <p id="share-coupon-name" class="text-blue-400 mb-6"></p>
+                <form id="share-form" action="share_coupon.php" method="post" class="space-y-4">
+                    <input type="hidden" id="share_coupon_id" name="coupon_id">
+                    <div>
+                        <label for="recipient_email" class="block text-sm font-medium mb-2">Recipient's Email</label>
+                        <input type="email" id="recipient_email" name="recipient_email" class="w-full bg-neutral-800 border border-white/10 rounded-lg px-4 py-3" placeholder="Enter email address" required>
+                    </div>
+                    <div>
+                        <label for="message" class="block text-sm font-medium mb-2">Message (Optional)</label>
+                        <textarea id="message" name="message" rows="3" class="w-full bg-neutral-800 border border-white/10 rounded-lg px-4 py-3" placeholder="Add a personal message"></textarea>
+                    </div>
+                    <div class="flex flex-col sm:flex-row gap-4">
+                        <button type="button" id="cancel-share" class="flex-1 bg-white/10 text-white font-medium py-3 rounded-lg hover:bg-white/15 transition-colors">Cancel</button>
+                        <button type="submit" class="flex-1 bg-blue-500 text-white font-medium py-3 rounded-lg hover:bg-blue-600 transition-colors">Share Coupon</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
@@ -423,25 +483,8 @@ if ($db_connection_error) {
             background-position: right 0.75rem center;
             background-size: 16px 16px;
         }
-        
         input[type="date"] {
             color-scheme: dark;
-        }
-        
-        .coupon-card {
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-        .coupon-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 25px -5px rgba(163, 230, 53, 0.1);
-        }
-        .copy-animation {
-            animation: copy-pulse 1s ease;
-        }
-        @keyframes copy-pulse {
-            0% { opacity: 0; transform: scale(0.5); }
-            50% { opacity: 1; transform: scale(1.2); }
-            100% { opacity: 0; transform: scale(1); }
         }
     </style>
 
@@ -449,12 +492,14 @@ if ($db_connection_error) {
         // Modal functionality
         const couponModal = document.getElementById('coupon-modal');
         const deleteModal = document.getElementById('delete-modal');
+        const shareModal = document.getElementById('share-modal');
+        const customCategoryContainer = document.getElementById('custom-category-container');
         const addCouponBtn = document.getElementById('add-coupon-btn');
         const addFirstCouponBtn = document.getElementById('add-first-coupon-btn');
         const closeModalBtn = document.getElementById('close-modal');
         const cancelDeleteBtn = document.getElementById('cancel-delete');
+        const cancelShareBtn = document.getElementById('cancel-share');
         const categorySelect = document.getElementById('category');
-        const customCategoryContainer = document.getElementById('custom-category-container');
         const customCategoryInput = document.getElementById('custom_category');
         const searchInput = document.getElementById('search');
         const filterInput = document.getElementById('filter');
@@ -466,7 +511,7 @@ if ($db_connection_error) {
             const today = new Date().toISOString().split('T')[0];
             document.getElementById('expiry_date').min = today;
             
-            // Setup instant search
+            // Setup instant search functionality
             setupInstantSearch();
             
             // Setup category select change handler
@@ -550,11 +595,11 @@ if ($db_connection_error) {
                         if (newCouponsContainer && currentCouponsContainer) {
                             currentCouponsContainer.innerHTML = newCouponsContainer.innerHTML;
                             
-                            // Reinitialize event listeners for the new content
-                            initializeEventListeners();
-                            
                             // Update URL without page reload
                             history.pushState({}, '', url);
+                            
+                            // Reinitialize event listeners for the new content
+                            initializeEventListeners();
                         } else {
                             // Fallback to full page reload if containers not found
                             window.location.href = url;
@@ -575,6 +620,7 @@ if ($db_connection_error) {
             document.querySelectorAll('.copy-btn').forEach(initializeCopyButton);
             document.querySelectorAll('.edit-coupon-btn').forEach(initializeEditButton);
             document.querySelectorAll('.delete-coupon-btn').forEach(initializeDeleteButton);
+            document.querySelectorAll('.share-coupon-btn').forEach(initializeShareButton);
         }
         
         // Open modal for adding new coupon
@@ -638,12 +684,13 @@ if ($db_connection_error) {
                     // Show success message
                     const copySuccess = document.getElementById('copy-success');
                     copySuccess.classList.remove('hidden');
+                    
+                    // Add animation to button
+                    this.classList.add('copy-animation');
                     setTimeout(() => {
                         copySuccess.classList.add('hidden');
                     }, 2000);
                     
-                    // Add animation to button
-                    this.classList.add('copy-animation');
                     setTimeout(() => {
                         this.classList.remove('copy-animation');
                     }, 1000);
@@ -651,15 +698,56 @@ if ($db_connection_error) {
             });
         }
         
-        // Apply event listeners to existing elements
-        document.querySelectorAll('.edit-coupon-btn').forEach(initializeEditButton);
-        document.querySelectorAll('.delete-coupon-btn').forEach(initializeDeleteButton);
-        document.querySelectorAll('.copy-btn').forEach(initializeCopyButton);
+        // Initialize share buttons - FIXED VERSION
+        function initializeShareButton(button) {
+            button.addEventListener('click', function(e) {
+                // Prevent default behavior and stop event propagation
+                e.preventDefault();
+                e.stopPropagation();
+                
+                // Get coupon info from data attributes
+                const couponId = this.getAttribute('data-id');
+                const couponName = this.getAttribute('data-name');
+                
+                // Update modal
+                document.getElementById('share-coupon-name').textContent = 'Share "' + couponName + '" with someone';
+                document.getElementById('share_coupon_id').value = couponId;
+                
+                // Show modal
+                if (shareModal) {
+                    shareModal.classList.remove('hidden');
+                    console.log('Share modal opened for coupon ID:', couponId);
+                } else {
+                    console.error('Share modal element not found!');
+                }
+            });
+        }
+        
+        // Make sure to apply event listeners to any existing share buttons
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM loaded - initializing share buttons');
+            const shareButtons = document.querySelectorAll('.share-coupon-btn');
+            console.log('Found', shareButtons.length, 'share buttons');
+            shareButtons.forEach(initializeShareButton);
+            
+            // Make sure all modals are properly initialized
+            if (!shareModal) {
+                console.error('Share modal not found in DOM!');
+            }
+        });
         
         // Cancel delete
         if (cancelDeleteBtn) {
             cancelDeleteBtn.addEventListener('click', function() {
                 deleteModal.classList.add('hidden');
+            });
+        }
+        
+        // Cancel share
+        if (cancelShareBtn) {
+            cancelShareBtn.addEventListener('click', function() {
+                document.getElementById('share-form').reset();
+                shareModal.classList.add('hidden');
             });
         }
         

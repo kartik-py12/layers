@@ -27,11 +27,40 @@ try {
     $stmt = $pdo->query("SHOW TABLES LIKE 'users'");
     $tablesExist = ($stmt->rowCount() > 0);
     
+    // Check specifically for shared_coupons table
+    $sharedTableStmt = $pdo->query("SHOW TABLES LIKE 'shared_coupons'");
+    $sharedTableExists = ($sharedTableStmt->rowCount() > 0);
+    
+    // Check for notifications table
+    $notif_stmt = $pdo->query("SHOW TABLES LIKE 'notifications'");
+    $notifTableExists = ($notif_stmt->rowCount() > 0);
+    
     // If tables don't exist, create them
     if (!$tablesExist) {
         // Include database setup script
         require_once __DIR__ . '/db_setup.php';
         setupDatabase($pdo);
+    } 
+    // If shared_coupons table doesn't exist, create it
+    else if (!$sharedTableExists) {
+        // Create the shared_coupons table
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `shared_coupons` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `coupon_id` INT NOT NULL,
+            `user_id` INT NOT NULL,
+            `recipient_id` INT NOT NULL,
+            `message` TEXT,
+            `shared_at` DATETIME NOT NULL,
+            FOREIGN KEY (`coupon_id`) REFERENCES `coupons`(`id`) ON DELETE CASCADE,
+            FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+            FOREIGN KEY (`recipient_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+    }
+    
+    // If notifications table doesn't exist, create it
+    if (!$notifTableExists) {
+        require_once __DIR__ . '/db_setup_notifications.php';
+        setupNotificationsTable($pdo);
     }
     
 } catch(PDOException $e) {

@@ -92,7 +92,7 @@
             <div class="hidden lg:block">
                 
                 <!-- cursor pointer -->
-                <div class="absolute">
+                    <div class="absolute">
                     <div class="relative">
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-mouse-pointer">
@@ -165,10 +165,12 @@
             save bigger!
             </p>
 
-            <form class="flex border border-white/15 rounded-full p-2 justify-between mt-8 max-w-2xl mx-auto">
-                <input class="bg-transparent px-4 text-sm md:text-lg " type="text" placeholder="Enter your email">
-                <button class="border md:mr-2 md:text-[16px] md:px-6 md:h-14  text-black bg-lime-400 border-lime-400 h-10 rounded-full px-3 text-sm font-medium whitespace-nowrap" type="submit">Sign Up</button>
+            <form id="signup-form" class="flex border border-white/15 rounded-full p-2 justify-between mt-8 max-w-2xl mx-auto">
+                <input id="signup-email" class="bg-transparent px-4 text-sm md:text-lg flex-grow" type="email" placeholder="Enter your email" required>
+                <button id="signup-btn" type="submit" class="border md:mr-2 md:text-[16px] md:px-6 md:h-14 text-black bg-lime-400 border-lime-400 h-10 rounded-full px-3 text-sm font-medium whitespace-nowrap">Sign Up</button>
             </form>
+            <div id="signup-success" class="hidden text-center mt-4 text-lime-400">Thanks for signing up! We'll be in touch soon.</div>
+            <div id="signup-error" class="hidden text-center mt-4 text-red-400">Please enter a valid email address.</div>
          </div>
     </section>
 
@@ -505,40 +507,4 @@
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" integrity="sha512-7eHRwcbYkK4d9g/6tD/mhkf++eoTHwpNM9woBxtPUBWm67zeAfFC+HrdoE2GanKeocly/VxeLvIqwvCdk7qScg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js" integrity="sha512-onMTRKJBKz8M1TnqqDuGBlowlH0ohFzMXYRNebz+yOcc5TQr/zAKsthzhuv0hiyUKEiQEQXEynnXCvNTOk50dg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="script.js"></script>
-
-    <script>
-        // User dropdown
-        const userMenuButton = document.getElementById('user-menu-button');
-        const userDropdown = document.getElementById('user-dropdown');
-        
-        if (userMenuButton && userDropdown) {
-            userMenuButton.addEventListener('click', function() {
-                userDropdown.classList.toggle('hidden');
-            });
-            
-            // Close dropdown when clicking outside
-            document.addEventListener('click', function(event) {
-                if (!userMenuButton.contains(event.target) && !userDropdown.contains(event.target)) {
-                    userDropdown.classList.add('hidden');
-                }
-            });
-        }
-        
-        // Mobile menu
-        const mobileMenuButton = document.getElementById('mobile-menu-button');
-        const mobileMenu = document.getElementById('mobile-menu');
-        
-        if (mobileMenuButton && mobileMenu) {
-            mobileMenuButton.addEventListener('click', function() {
-                mobileMenu.classList.toggle('hidden');
-            });
-        }
-    </script>
-    </body>
-</html>
-    
-<?php
-  // Include footer component
-  include_once 'components/footer.php';
-?>
+    <script>src="script.js"></script>

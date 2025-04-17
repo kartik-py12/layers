@@ -35,6 +35,32 @@ function setupDatabase($pdo) {
             `name` VARCHAR(50) NOT NULL UNIQUE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
         
+        // Create shared_coupons table
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `shared_coupons` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `coupon_id` INT NOT NULL,
+            `user_id` INT NOT NULL,
+            `recipient_id` INT NOT NULL,
+            `message` TEXT,
+            `shared_at` DATETIME NOT NULL,
+            FOREIGN KEY (`coupon_id`) REFERENCES `coupons`(`id`) ON DELETE CASCADE,
+            FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+            FOREIGN KEY (`recipient_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+        
+        // Create notifications table
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `notifications` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `user_id` INT NOT NULL,
+            `type` VARCHAR(50) NOT NULL,
+            `title` VARCHAR(255) NOT NULL,
+            `content` TEXT NOT NULL,
+            `related_id` INT NULL,
+            `is_read` TINYINT(1) DEFAULT 0,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+        
         // Add default categories
         $categories = ['Electronics', 'Fashion', 'Food', 'Travel', 'Entertainment', 'Beauty', 'Home', 'Other'];
         $stmt = $pdo->prepare("INSERT IGNORE INTO `categories` (`name`) VALUES (?)");

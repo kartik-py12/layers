@@ -283,12 +283,32 @@ try {
             <?php else: ?>
                 <?php foreach($coupons as $coupon): ?>
                     <?php 
-                    $is_expired = strtotime($coupon['expiry_date']) < time();
-                    $days_left = round((strtotime($coupon['expiry_date']) - time()) / (60 * 60 * 24));
+                    // Improved expiration calculation
+                    $expiry_timestamp = strtotime($coupon['expiry_date'] . ' 23:59:59'); // Set to end of expiry day
+                    $current_timestamp = time();
+                    $seconds_left = $expiry_timestamp - $current_timestamp;
+                    $days_left = floor($seconds_left / (60 * 60 * 24));
+                    $hours_left = floor(($seconds_left % (60 * 60 * 24)) / 3600);
+                    
+                    $is_expired = $seconds_left < 0;
                     $is_used = $coupon['is_used'] == 1;
                     $is_shared = isset($coupon['is_shared']) && $coupon['is_shared'] == 1;
                     $border_class = $is_expired ? 'border-red-500/50' : ($is_used ? 'border-gray-500/50 opacity-60' : 'border-white/10');
                     $highlight_color = $is_expired ? 'red' : ($is_used ? 'gray' : 'lime');
+                    
+                    // More precise expiration message
+                    $expiry_message = '';
+                    if ($is_expired) {
+                        $expiry_message = 'Expired';
+                    } else if ($is_used) {
+                        $expiry_message = 'Used';
+                    } else if ($days_left == 0) {
+                        $expiry_message = $hours_left > 0 ? "Expires in {$hours_left}h" : "Expires in <1h";
+                    } else if ($days_left == 1) {
+                        $expiry_message = "Expires tomorrow";
+                    } else {
+                        $expiry_message = "{$days_left} days left";
+                    }
                     ?>
                     <div class="coupon-card bg-neutral-900 rounded-xl border <?php echo $border_class; ?> overflow-hidden group">
                         <div class="flex items-center justify-between px-4 py-3 border-b border-white/10">
@@ -303,7 +323,7 @@ try {
                             </div>
                             <div class="text-right">
                                 <div class="text-xl font-bold text-<?php echo $highlight_color; ?>-400"><?php echo $coupon['discount']; ?>%</div>
-                                <div class="text-xs text-white/50"><?php echo $is_expired ? 'Expired' : ($is_used ? 'Used' : ($days_left == 0 ? 'Expires today' : ($days_left == 1 ? '1 day left' : $days_left.' days left'))); ?></div>
+                                <div class="text-xs text-white/50"><?php echo $expiry_message; ?></div>
                             </div>
                         </div>
                         
@@ -322,6 +342,24 @@ try {
                             
                             <?php if(!empty($coupon['description'])): ?>
                                 <p class="mt-3 text-sm text-white/70"><?php echo htmlspecialchars($coupon['description']); ?></p>
+                            <?php endif; ?>
+                            
+                            <!-- Add expiry alert status information -->
+                            <?php if(!$is_expired && !$is_used && $days_left <= 2): ?>
+                                <div class="mt-2 flex items-center text-xs">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-yellow-500 mr-1"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                                    <span class="text-yellow-500">
+                                        <?php 
+                                        if ($days_left == 0) {
+                                            echo $hours_left > 0 ? "Expires in {$hours_left} hours" : "Expires very soon";
+                                        } else if ($days_left == 1) {
+                                            echo "Expires tomorrow" . (($hours_left > 12) ? "" : " - Email alert sent");
+                                        } else {
+                                            echo "Expires in {$days_left} days";
+                                        }
+                                        ?>
+                                    </span>
+                                </div>
                             <?php endif; ?>
                             
                             <div class="mt-4 pt-3 border-t border-white/10 flex justify-between">
@@ -353,7 +391,7 @@ try {
             <?php endif; ?>
         </div>
     </main>
-
+    
     <!-- Add/Edit Coupon Modal -->
     <div id="coupon-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
         <div class="absolute inset-0 bg-black/70"></div>
@@ -448,7 +486,7 @@ try {
             </div>
         </div>
     </div>
-
+    
     <!-- Share Coupon Modal -->
     <div id="share-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
         <div class="absolute inset-0 bg-black/70"></div>
@@ -474,7 +512,7 @@ try {
             </div>
         </div>
     </div>
-
+    
     <style>
         /* Fix select background and input styling */
         select {
@@ -505,15 +543,15 @@ try {
         const filterInput = document.getElementById('filter');
         const sortInput = document.getElementById('sort');
         const couponForm = document.getElementById('coupon-form');
-        
+
         // Set today as the min date for expiry date
         document.addEventListener('DOMContentLoaded', function() {
             const today = new Date().toISOString().split('T')[0];
             document.getElementById('expiry_date').min = today;
-            
+
             // Setup instant search functionality
             setupInstantSearch();
-            
+
             // Setup category select change handler
             if (categorySelect) {
                 categorySelect.addEventListener('change', function() {
@@ -526,27 +564,27 @@ try {
                     }
                 });
             }
-            
+
             // Setup form submission to handle custom category
             if (couponForm) {
                 couponForm.addEventListener('submit', function(e) {
                     if (categorySelect.value === 'Other' && customCategoryInput.value.trim() !== '') {
                         // Use the custom category instead of "Other"
                         const customCategoryValue = customCategoryInput.value.trim();
-                        
+
                         // Create hidden input to send the actual category value
                         const hiddenInput = document.createElement('input');
                         hiddenInput.type = 'hidden';
                         hiddenInput.name = 'category';
                         hiddenInput.value = customCategoryValue;
-                        
+
                         // Replace the select value with our custom value
                         this.appendChild(hiddenInput);
                     }
                 });
             }
         });
-        
+
         // Setup instant search functionality
         function setupInstantSearch() {
             let debounceTimeout;
@@ -561,7 +599,7 @@ try {
                 });
             }
             
-            // Filter and sort change handlers
+            // Filter and sort change handler
             if (filterInput) {
                 filterInput.addEventListener('change', performSearch);
             }
@@ -601,7 +639,7 @@ try {
                             // Reinitialize event listeners for the new content
                             initializeEventListeners();
                         } else {
-                            // Fallback to full page reload if containers not found
+                            // Fallback to full page reload if containers not found 
                             window.location.href = url;
                         }
                     })
@@ -687,6 +725,7 @@ try {
                     
                     // Add animation to button
                     this.classList.add('copy-animation');
+                    
                     setTimeout(() => {
                         copySuccess.classList.add('hidden');
                     }, 2000);

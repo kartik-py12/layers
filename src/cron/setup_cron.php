@@ -70,8 +70,9 @@ $cron_command = "0 9 * * * $php_path $script_path";
                 <li>Name: "Coupon Expiry Check"</li>
                 <li>Trigger: Daily at 9:00 AM</li>
                 <li>Action: Start a program</li>
-                <li>Program/script: <code><?php echo $php_path; ?></code></li>
-                <li>Arguments: <code><?php echo $script_path; ?></code></li>
+                <li>Program/script: <code>C:\xampp\php\php.exe</code></li>
+                <li>Add arguments: <code>C:\xampp\htdocs\layers\cron.php</code></li>
+                <li>Start in: <code>C:\xampp\htdocs\layers</code></li>
             </ul>
         </li>
     </ol>

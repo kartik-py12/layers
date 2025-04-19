@@ -10,6 +10,7 @@ function setupDatabase($pdo) {
             `name` VARCHAR(100) NOT NULL,
             `email` VARCHAR(100) NOT NULL UNIQUE,
             `password` VARCHAR(255) NOT NULL,
+            `profile_image` VARCHAR(255) DEFAULT NULL,
             `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
         
@@ -69,9 +70,20 @@ function setupDatabase($pdo) {
             $stmt->execute([$category]);
         }
         
+        // Check if profile_image column exists, if not add it (for existing installations)
+        try {
+            $result = $pdo->query("SHOW COLUMNS FROM `users` LIKE 'profile_image'");
+            if ($result->rowCount() == 0) {
+                $pdo->exec("ALTER TABLE `users` ADD COLUMN `profile_image` VARCHAR(255) DEFAULT NULL");
+            }
+        } catch (PDOException $columnEx) {
+            // Silently fail, as the main table creation would have already handled it
+        }
+        
         return true;
     } catch (PDOException $e) {
         return false;
+        
     }
 }
 ?>

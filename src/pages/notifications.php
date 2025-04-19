@@ -181,12 +181,16 @@ if ($db_connection_error) {
                     
                     <div class="relative">
                         <button id="user-menu-button" class="flex items-center gap-2 text-sm focus:outline-none">
-                            <div class="size-8 rounded-full bg-lime-400 flex items-center justify-center text-black font-medium">
-                                <?php echo substr($_SESSION["name"], 0, 1); ?>
-                            </div>
-                            <span class="hidden md:block"><?php echo htmlspecialchars($_SESSION["name"]); ?></span>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-                        </button>
+    <?php if(!empty($_SESSION["profile_image"])): ?>
+        <img src="../<?php echo htmlspecialchars($_SESSION["profile_image"]); ?>" class="w-8 h-8 rounded-full object-cover" alt="Profile">
+    <?php else: ?>
+        <div class="w-8 h-8 rounded-full bg-lime-400 flex items-center justify-center text-black font-medium">
+            <?php echo substr($_SESSION["name"], 0, 1); ?>
+        </div>
+    <?php endif; ?>
+    <span class="hidden md:block"><?php echo htmlspecialchars($_SESSION["name"]); ?></span>
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+</button>
                         <!-- Dropdown menu -->
                         <div id="user-dropdown" class="hidden absolute right-0 mt-2 w-48 rounded-lg bg-neutral-900 border border-white/10 shadow-lg py-1 z-10">
                             <a href="profile.php" class="block px-4 py-2 text-sm hover:bg-white/5">Profile</a>

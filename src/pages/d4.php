@@ -26,54 +26,43 @@ $search = isset($_GET['search']) ? $_GET['search'] : '';
 if ($db_connection_error) {
     $error_message = "Database connection error: " . $db_error_message;
 } else {
-    // Prepare query based on filters - includes shared coupons
-    $baseQuery = "SELECT c.*, 
-            CASE WHEN c.user_id = :user_id THEN 0 ELSE 1 END AS is_shared,
-            CASE WHEN c.user_id != :user_id THEN (SELECT name FROM users WHERE id = c.user_id) ELSE NULL END AS shared_by
-            FROM coupons c 
-            LEFT JOIN (
-                SELECT * FROM shared_coupons WHERE recipient_id = :user_id
-            ) sc ON c.id = sc.coupon_id
-            WHERE (c.user_id = :user_id OR sc.id IS NOT NULL)";
-    
+    // Prepare query based on filters
+    // $sql = "SELECT * FROM coupons WHERE user_id = :user_id";
+    $sql = "SELECT c.*, 
+    CASE WHEN c.user_id = :user_id THEN 0 ELSE 1 END AS is_shared,
+    CASE WHEN c.user_id != :user_id THEN (SELECT name FROM users WHERE id = c.user_id) ELSE NULL END AS shared_by
+    FROM coupons c 
+    WHERE c.user_id = :user_id OR c.id IN (
+        SELECT coupon_id FROM shared_coupons WHERE recipient_id = :user_id
+    )";
+
     // Add search condition if provided
-    $searchCondition = "";
     if(!empty($search)) {
-        $searchCondition = " AND (
-            c.coupon_name LIKE :search 
-            OR c.store LIKE :search 
-            OR c.coupon_code LIKE :search 
-            OR c.category LIKE :search
-        )";
+        $sql .= " AND (coupon_name LIKE :search OR category LIKE :search OR store LIKE :search OR coupon_code LIKE :search)";
     }
-    
-    // Combine base query with search condition
-    $sql = $baseQuery . $searchCondition;
-    
+
     // Add category filter if provided
     if(!empty($filter)) {
-        $sql .= " AND c.category = :filter";
+        $sql .= " AND category = :filter";
     }
 
     // Add sorting
     switch($sort) {
         case 'expiry_desc':
-            $sql .= " ORDER BY c.expiry_date DESC";
+            $sql .= " ORDER BY expiry_date DESC";
             break;
         case 'discount_desc':
-            $sql .= " ORDER BY c.discount DESC";
+            $sql .= " ORDER BY discount DESC";
             break;
         case 'discount_asc':
-            $sql .= " ORDER BY c.discount ASC";
+            $sql .= " ORDER BY discount ASC";
             break;
         case 'expiry_asc':
         default:
-            $sql .= " ORDER BY c.expiry_date ASC";
+            $sql .= " ORDER BY expiry_date ASC";
             break;
     }
     
-    // Debug: Add this line temporarily to see the actual query
-    // echo "<!-- SQL Debug: " . $sql . " -->";
 
     // Prepare and execute the query
     try {

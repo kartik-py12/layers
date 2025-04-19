@@ -26,54 +26,36 @@ $search = isset($_GET['search']) ? $_GET['search'] : '';
 if ($db_connection_error) {
     $error_message = "Database connection error: " . $db_error_message;
 } else {
-    // Prepare query based on filters - includes shared coupons
-    $baseQuery = "SELECT c.*, 
-            CASE WHEN c.user_id = :user_id THEN 0 ELSE 1 END AS is_shared,
-            CASE WHEN c.user_id != :user_id THEN (SELECT name FROM users WHERE id = c.user_id) ELSE NULL END AS shared_by
-            FROM coupons c 
-            LEFT JOIN (
-                SELECT * FROM shared_coupons WHERE recipient_id = :user_id
-            ) sc ON c.id = sc.coupon_id
-            WHERE (c.user_id = :user_id OR sc.id IS NOT NULL)";
-    
+    // Prepare query based on filters
+    $sql = "SELECT * FROM coupons WHERE user_id = :user_id";
+
     // Add search condition if provided
-    $searchCondition = "";
     if(!empty($search)) {
-        $searchCondition = " AND (
-            c.coupon_name LIKE :search 
-            OR c.store LIKE :search 
-            OR c.coupon_code LIKE :search 
-            OR c.category LIKE :search
-        )";
+        $sql .= " AND (coupon_name LIKE :search OR category LIKE :search OR store LIKE :search OR coupon_code LIKE :search)";
     }
-    
-    // Combine base query with search condition
-    $sql = $baseQuery . $searchCondition;
-    
+
     // Add category filter if provided
     if(!empty($filter)) {
-        $sql .= " AND c.category = :filter";
+        $sql .= " AND category = :filter";
     }
 
     // Add sorting
     switch($sort) {
         case 'expiry_desc':
-            $sql .= " ORDER BY c.expiry_date DESC";
+            $sql .= " ORDER BY expiry_date DESC";
             break;
         case 'discount_desc':
-            $sql .= " ORDER BY c.discount DESC";
+            $sql .= " ORDER BY discount DESC";
             break;
         case 'discount_asc':
-            $sql .= " ORDER BY c.discount ASC";
+            $sql .= " ORDER BY discount ASC";
             break;
         case 'expiry_asc':
         default:
-            $sql .= " ORDER BY c.expiry_date ASC";
+            $sql .= " ORDER BY expiry_date ASC";
             break;
     }
     
-    // Debug: Add this line temporarily to see the actual query
-    // echo "<!-- SQL Debug: " . $sql . " -->";
 
     // Prepare and execute the query
     try {
@@ -148,20 +130,6 @@ try {
             0% { opacity: 0; transform: scale(0.5); }
             50% { opacity: 1; transform: scale(1.2); }
             100% { opacity: 0; transform: scale(1); }
-        }
-        
-        /* Toggle Switch Styling - Fixed Version */
-        #show-expired:checked ~ .dot {
-            transform: translateX(140%); /* Use a specific pixel value */
-            background-color: #84cc16; /* Lime-500 */
-        }
-        
-        #show-expired:checked ~ .block {
-            background-color: rgba(132, 204, 22, 0.2); /* Lime-500 with opacity */
-        }
-        
-        .dot {
-            transition: all 0.3s ease-in-out;
         }
     </style>
 </head>
@@ -300,20 +268,8 @@ try {
                     <button type="submit" class="w-full bg-white/10 hover:bg-white/15 text-white font-medium py-2 rounded-lg transition-colors">Apply Filters</button>
                 </div>
             </form>
-            
-            <!-- Expired Coupons Toggle -->
-            <div class="mt-4 flex items-center justify-end">
-                <label for="show-expired" class="flex items-center cursor-pointer">
-                    <span class="text-sm mr-3">Show Expired Coupons</span>
-                    <div class="relative">
-                        <input type="checkbox" id="show-expired" class="sr-only">
-                        <div class="block bg-neutral-800 w-14 h-7 rounded-full"></div>
-                        <div class="dot absolute left-1 top-1 bg-white w-5 h-5 rounded-full transition"></div>
-                    </div>
-                </label>
-            </div>
         </div>
-        
+
         <!-- Coupons Grid -->
         <div id="coupons-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <?php if(!isset($coupons) || empty($coupons)): ?>
@@ -374,20 +330,24 @@ try {
                                 <div class="text-xs text-white/50"><?php echo $expiry_message; ?></div>
                             </div>
                         </div>
+                        
                         <div class="p-4 <?php echo $is_shared ? 'bg-gradient-to-b from-neutral-900 to-blue-950/30' : ''; ?>">
                             <div class="flex justify-between items-center mb-3">
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-white/10"><?php echo htmlspecialchars($coupon['category']); ?></span>
                                 <span class="text-sm text-white/50">Expires: <?php echo date('M d, Y', strtotime($coupon['expiry_date'])); ?></span>
                             </div>
+                            
                             <div class="relative">
                                 <div class="bg-neutral-800 p-2 rounded text-center font-mono text-lg select-all"><?php echo htmlspecialchars($coupon['coupon_code']); ?></div>
                                 <button class="copy-btn absolute right-2 top-2 text-white/50 hover:text-white" data-code="<?php echo htmlspecialchars($coupon['coupon_code']); ?>">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                                 </button>
                             </div>
+                            
                             <?php if(!empty($coupon['description'])): ?>
                                 <p class="mt-3 text-sm text-white/70"><?php echo htmlspecialchars($coupon['description']); ?></p>
                             <?php endif; ?>
+                            
                             <!-- Add expiry alert status information -->
                             <?php if(!$is_expired && !$is_used && $days_left <= 2): ?>
                                 <div class="mt-2 flex items-center text-xs">
@@ -405,6 +365,7 @@ try {
                                     </span>
                                 </div>
                             <?php endif; ?>
+                            
                             <div class="mt-4 pt-3 border-t border-white/10 flex justify-between">
                                 <div class="flex space-x-2">
                                     <button class="edit-coupon-btn text-white/70 hover:text-white" data-id="<?php echo $coupon['id']; ?>">
@@ -417,6 +378,7 @@ try {
                                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
                                     </button>
                                 </div>
+                                
                                 <?php if(!$is_expired && !$is_used): ?>
                                     <form action="mark_used.php" method="post" class="inline">
                                         <input type="hidden" name="coupon_id" value="<?php echo $coupon['id']; ?>">
@@ -490,8 +452,8 @@ try {
                                 <option value="Entertainment">Entertainment</option>
                                 <option value="Beauty">Beauty</option>
                                 <option value="Home">Home</option>
-                                <option value="Other">Other (Custom)</option>
                             <?php endif; ?>
+                            <option value="Other">Other (Custom)</option>
                         </select>
                     </div>
                     
@@ -542,7 +504,10 @@ try {
                         <label for="recipient_email" class="block text-sm font-medium mb-2">Recipient's Email</label>
                         <input type="email" id="recipient_email" name="recipient_email" class="w-full bg-neutral-800 border border-white/10 rounded-lg px-4 py-3" placeholder="Enter email address" required>
                     </div>
-
+                    <div>
+                        <label for="message" class="block text-sm font-medium mb-2">Message (Optional)</label>
+                        <textarea id="message" name="message" rows="3" class="w-full bg-neutral-800 border border-white/10 rounded-lg px-4 py-3" placeholder="Add a personal message"></textarea>
+                    </div>
                     <div class="flex flex-col sm:flex-row gap-4">
                         <button type="button" id="cancel-share" class="flex-1 bg-white/10 text-white font-medium py-3 rounded-lg hover:bg-white/15 transition-colors">Cancel</button>
                         <button type="submit" class="flex-1 bg-blue-500 text-white font-medium py-3 rounded-lg hover:bg-blue-600 transition-colors">Share Coupon</button>
@@ -582,7 +547,6 @@ try {
         const filterInput = document.getElementById('filter');
         const sortInput = document.getElementById('sort');
         const couponForm = document.getElementById('coupon-form');
-        const showExpiredToggle = document.getElementById('show-expired');
 
         // Set today as the min date for expiry date
         document.addEventListener('DOMContentLoaded', function() {
@@ -591,12 +555,6 @@ try {
 
             // Setup instant search functionality
             setupInstantSearch();
-
-            // Initialize the expired coupons toggle
-            initializeExpiredToggle();
-
-            // Initialize event listeners for edit, delete and copy buttons
-            initializeEventListeners();
 
             // Setup category select change handler
             if (categorySelect) {
@@ -634,7 +592,7 @@ try {
         // Setup instant search functionality
         function setupInstantSearch() {
             let debounceTimeout;
-
+            
             // Search input handler - fix form submission
             if (searchInput) {
                 searchInput.addEventListener('input', function() {
@@ -644,7 +602,7 @@ try {
                     }, 300); // Wait 300ms after user stops typing
                 });
             }
-
+            
             // Fix form submission to use our search instead of default behavior
             const filterForm = document.getElementById('filter-form');
             if (filterForm) {
@@ -663,15 +621,14 @@ try {
                 sortInput.addEventListener('change', performSearch);
             }
         }
-
+        
         function performSearch() {
             const searchValue = searchInput ? searchInput.value : '';
             const filterValue = filterInput ? filterInput.value : '';
             const sortValue = sortInput ? sortInput.value : 'expiry_asc';
-            const showExpired = showExpiredToggle ? showExpiredToggle.checked : true;
-
-            console.log("Performing search with:", { search: searchValue, filter: filterValue, sort: sortValue, showExpired: showExpired });
-
+            
+            console.log("Performing search with:", { search: searchValue, filter: filterValue, sort: sortValue });
+            
             // Create URL with parameters
             const url = `dashboard.php?search=${encodeURIComponent(searchValue)}&filter=${encodeURIComponent(filterValue)}&sort=${encodeURIComponent(sortValue)}`;
             
@@ -696,15 +653,13 @@ try {
                         
                         // Replace just the coupons container with the new content
                         const newCouponsContainer = doc.getElementById('coupons-container');
+                        
                         if (newCouponsContainer && couponsContainer) {
                             couponsContainer.innerHTML = newCouponsContainer.innerHTML;
                             couponsContainer.classList.remove('opacity-50');
                             
                             // Update URL without page reload for bookmarking/sharing
                             history.pushState({}, '', url);
-                            
-                            // Apply expired coupon filter to the new content
-                            filterExpiredCoupons(showExpired);
                             
                             // Reinitialize event listeners for the new content
                             initializeEventListeners();
@@ -729,44 +684,6 @@ try {
             document.querySelectorAll('.edit-coupon-btn').forEach(initializeEditButton);
             document.querySelectorAll('.delete-coupon-btn').forEach(initializeDeleteButton);
             document.querySelectorAll('.share-coupon-btn').forEach(initializeShareButton);
-        }
-
-        // Initialize the expired coupons toggle from localStorage
-        function initializeExpiredToggle() {
-            if (showExpiredToggle) {
-                // Get saved preference from localStorage (default to false/off)
-                const showExpired = localStorage.getItem('showExpiredCoupons') === 'true';
-                
-                // Set the toggle to match saved preference
-                showExpiredToggle.checked = showExpired;
-                
-                // Add event listener for toggle changes
-                showExpiredToggle.addEventListener('change', function() {
-                    // Save preference to localStorage
-                    localStorage.setItem('showExpiredCoupons', this.checked);
-                    
-                    // Update display
-                    performSearch();
-                });
-                
-                // Apply filter on initial load
-                filterExpiredCoupons(showExpired);
-            }
-        }
-        
-        // Filter expired coupons in the UI
-        function filterExpiredCoupons(showExpired) {
-            const couponCards = document.querySelectorAll('.coupon-card');
-            
-            couponCards.forEach(card => {
-                const isExpired = card.classList.contains('border-red-500/50');
-                
-                if (isExpired && !showExpired) {
-                    card.classList.add('hidden');
-                } else {
-                    card.classList.remove('hidden');
-                }
-            });
         }
         
         // Open modal for adding new coupon
@@ -799,60 +716,20 @@ try {
                 couponModal.classList.add('hidden');
             });
         }
-
+        
         // Initialize edit buttons
         function initializeEditButton(button) {
             button.addEventListener('click', function() {
                 const couponId = this.getAttribute('data-id');
-                
-                // Fetch coupon data from the server
-                fetch(`get_coupon.php?id=${couponId}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            // Populate the form with the coupon data
-                            document.getElementById('coupon_name').value = data.coupon.coupon_name;
-                            document.getElementById('coupon_code').value = data.coupon.coupon_code;
-                            document.getElementById('discount').value = data.coupon.discount;
-                            document.getElementById('expiry_date').value = data.coupon.expiry_date;
-                            document.getElementById('store').value = data.coupon.store;
-                            document.getElementById('description').value = data.coupon.description || '';
-                            
-                            // Set the category
-                            const categorySelect = document.getElementById('category');
-                            const categoryOptions = Array.from(categorySelect.options);
-                            const categoryOption = categoryOptions.find(option => option.value === data.coupon.category);
-                            
-                            if (categoryOption) {
-                                categorySelect.value = data.coupon.category;
-                            } else {
-                                // If category not in list, select "Other" and set custom category
-                                const otherOption = categoryOptions.find(option => option.value === 'Other');
-                                if (otherOption) {
-                                    categorySelect.value = 'Other';
-                                    document.getElementById('custom_category').value = data.coupon.category;
-                                    document.getElementById('custom-category-container').classList.remove('hidden');
-                                }
-                            }
-                            
-                            // Update the modal title and form action
-                            document.getElementById('modal-title').textContent = 'Edit Coupon';
-                            document.getElementById('coupon_id').value = couponId;
-                            document.getElementById('coupon-form').action = 'update_coupon.php';
-                            
-                            // Show the modal
-                            couponModal.classList.remove('hidden');
-                        } else {
-                            alert('Failed to load coupon data: ' + data.message);
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error fetching coupon data:', error);
-                        alert('Failed to load coupon data. Please try again.');
-                    });
+                // In a real app, you would fetch the coupon data via AJAX
+                // For demo purposes, we'll just open the modal
+                document.getElementById('modal-title').textContent = 'Edit Coupon';
+                document.getElementById('coupon_id').value = couponId;
+                document.getElementById('coupon-form').action = 'update_coupon.php';
+                couponModal.classList.remove('hidden');
             });
         }
-
+        
         // Initialize delete buttons
         function initializeDeleteButton(button) {
             button.addEventListener('click', function() {
@@ -903,34 +780,41 @@ try {
                 // Show modal
                 if (shareModal) {
                     shareModal.classList.remove('hidden');
+                    console.log('Share modal opened for coupon ID:', couponId);
                 } else {
-                    console.error('Share modal not found in DOM!');
+                    console.error('Share modal element not found!');
                 }
             });
         }
-
+        
         // Make sure to apply event listeners to any existing share buttons
         document.addEventListener('DOMContentLoaded', function() {
             console.log('DOM loaded - initializing share buttons');
             const shareButtons = document.querySelectorAll('.share-coupon-btn');
             console.log('Found', shareButtons.length, 'share buttons');
             shareButtons.forEach(initializeShareButton);
+            
+            // Make sure all modals are properly initialized
+            if (!shareModal) {
+                console.error('Share modal not found in DOM!');
+            }
         });
-
-        // Make sure all modals are properly initialized
+        
+        // Cancel delete
         if (cancelDeleteBtn) {
             cancelDeleteBtn.addEventListener('click', function() {
                 deleteModal.classList.add('hidden');
             });
         }
         
+        // Cancel share
         if (cancelShareBtn) {
             cancelShareBtn.addEventListener('click', function() {
                 document.getElementById('share-form').reset();
                 shareModal.classList.add('hidden');
             });
         }
-
+        
         // User dropdown
         const userMenuButton = document.getElementById('user-menu-button');
         const userDropdown = document.getElementById('user-dropdown');
@@ -947,7 +831,7 @@ try {
                 }
             });
         }
-
+        
         // Mobile menu
         const mobileMenuButton = document.getElementById('mobile-menu-button');
         const mobileMenu = document.getElementById('mobile-menu');

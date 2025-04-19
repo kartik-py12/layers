@@ -134,7 +134,7 @@ if($_SERVER["REQUEST_METHOD"] == "POST"){
                 <div>
                     <div class="flex items-center justify-between mb-2">
                         <label for="password" class="block text-sm font-medium">Password</label>
-                        <a href="#" class="text-sm text-lime-400 hover:underline">Forgot password?</a>
+                        <!-- <a href="#" class="text-sm text-lime-400 hover:underline">Forgot password?</a> -->
                     </div>
                     <input type="password" id="password" name="password" class="w-full bg-neutral-800 border border-white/10 rounded-lg px-4 py-3 focus:outline-none focus:border-lime-400 <?php echo (!empty($password_err)) ? 'border-red-500' : ''; ?>">
                     <?php if(!empty($password_err)): ?>

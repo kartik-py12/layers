@@ -26,54 +26,36 @@ $search = isset($_GET['search']) ? $_GET['search'] : '';
 if ($db_connection_error) {
     $error_message = "Database connection error: " . $db_error_message;
 } else {
-    // Prepare query based on filters - includes shared coupons
-    $baseQuery = "SELECT c.*, 
-            CASE WHEN c.user_id = :user_id THEN 0 ELSE 1 END AS is_shared,
-            CASE WHEN c.user_id != :user_id THEN (SELECT name FROM users WHERE id = c.user_id) ELSE NULL END AS shared_by
-            FROM coupons c 
-            LEFT JOIN (
-                SELECT * FROM shared_coupons WHERE recipient_id = :user_id
-            ) sc ON c.id = sc.coupon_id
-            WHERE (c.user_id = :user_id OR sc.id IS NOT NULL)";
-    
+    // Prepare query based on filters
+    $sql = "SELECT * FROM coupons WHERE user_id = :user_id";
+
     // Add search condition if provided
-    $searchCondition = "";
     if(!empty($search)) {
-        $searchCondition = " AND (
-            c.coupon_name LIKE :search 
-            OR c.store LIKE :search 
-            OR c.coupon_code LIKE :search 
-            OR c.category LIKE :search
-        )";
+        $sql .= " AND (coupon_name LIKE :search OR category LIKE :search OR store LIKE :search OR coupon_code LIKE :search)";
     }
-    
-    // Combine base query with search condition
-    $sql = $baseQuery . $searchCondition;
-    
+
     // Add category filter if provided
     if(!empty($filter)) {
-        $sql .= " AND c.category = :filter";
+        $sql .= " AND category = :filter";
     }
 
     // Add sorting
     switch($sort) {
         case 'expiry_desc':
-            $sql .= " ORDER BY c.expiry_date DESC";
+            $sql .= " ORDER BY expiry_date DESC";
             break;
         case 'discount_desc':
-            $sql .= " ORDER BY c.discount DESC";
+            $sql .= " ORDER BY discount DESC";
             break;
         case 'discount_asc':
-            $sql .= " ORDER BY c.discount ASC";
+            $sql .= " ORDER BY discount ASC";
             break;
         case 'expiry_asc':
         default:
-            $sql .= " ORDER BY c.expiry_date ASC";
+            $sql .= " ORDER BY expiry_date ASC";
             break;
     }
     
-    // Debug: Add this line temporarily to see the actual query
-    // echo "<!-- SQL Debug: " . $sql . " -->";
 
     // Prepare and execute the query
     try {
@@ -150,9 +132,9 @@ try {
             100% { opacity: 0; transform: scale(1); }
         }
         
-        /* Toggle Switch Styling - Fixed Version */
+        /* Toggle Switch Styling */
         #show-expired:checked ~ .dot {
-            transform: translateX(140%); /* Use a specific pixel value */
+            transform: translateX(100%);
             background-color: #84cc16; /* Lime-500 */
         }
         
@@ -542,7 +524,10 @@ try {
                         <label for="recipient_email" class="block text-sm font-medium mb-2">Recipient's Email</label>
                         <input type="email" id="recipient_email" name="recipient_email" class="w-full bg-neutral-800 border border-white/10 rounded-lg px-4 py-3" placeholder="Enter email address" required>
                     </div>
-
+                    <div>
+                        <label for="message" class="block text-sm font-medium mb-2">Message (Optional)</label>
+                        <textarea id="message" name="message" rows="3" class="w-full bg-neutral-800 border border-white/10 rounded-lg px-4 py-3" placeholder="Add a personal message"></textarea>
+                    </div>
                     <div class="flex flex-col sm:flex-row gap-4">
                         <button type="button" id="cancel-share" class="flex-1 bg-white/10 text-white font-medium py-3 rounded-lg hover:bg-white/15 transition-colors">Cancel</button>
                         <button type="submit" class="flex-1 bg-blue-500 text-white font-medium py-3 rounded-lg hover:bg-blue-600 transition-colors">Share Coupon</button>
@@ -594,9 +579,6 @@ try {
 
             // Initialize the expired coupons toggle
             initializeExpiredToggle();
-
-            // Initialize event listeners for edit, delete and copy buttons
-            initializeEventListeners();
 
             // Setup category select change handler
             if (categorySelect) {
@@ -804,52 +786,12 @@ try {
         function initializeEditButton(button) {
             button.addEventListener('click', function() {
                 const couponId = this.getAttribute('data-id');
-                
-                // Fetch coupon data from the server
-                fetch(`get_coupon.php?id=${couponId}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            // Populate the form with the coupon data
-                            document.getElementById('coupon_name').value = data.coupon.coupon_name;
-                            document.getElementById('coupon_code').value = data.coupon.coupon_code;
-                            document.getElementById('discount').value = data.coupon.discount;
-                            document.getElementById('expiry_date').value = data.coupon.expiry_date;
-                            document.getElementById('store').value = data.coupon.store;
-                            document.getElementById('description').value = data.coupon.description || '';
-                            
-                            // Set the category
-                            const categorySelect = document.getElementById('category');
-                            const categoryOptions = Array.from(categorySelect.options);
-                            const categoryOption = categoryOptions.find(option => option.value === data.coupon.category);
-                            
-                            if (categoryOption) {
-                                categorySelect.value = data.coupon.category;
-                            } else {
-                                // If category not in list, select "Other" and set custom category
-                                const otherOption = categoryOptions.find(option => option.value === 'Other');
-                                if (otherOption) {
-                                    categorySelect.value = 'Other';
-                                    document.getElementById('custom_category').value = data.coupon.category;
-                                    document.getElementById('custom-category-container').classList.remove('hidden');
-                                }
-                            }
-                            
-                            // Update the modal title and form action
-                            document.getElementById('modal-title').textContent = 'Edit Coupon';
-                            document.getElementById('coupon_id').value = couponId;
-                            document.getElementById('coupon-form').action = 'update_coupon.php';
-                            
-                            // Show the modal
-                            couponModal.classList.remove('hidden');
-                        } else {
-                            alert('Failed to load coupon data: ' + data.message);
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error fetching coupon data:', error);
-                        alert('Failed to load coupon data. Please try again.');
-                    });
+                // In a real app, you would fetch the coupon data via AJAX
+                // For demo purposes, we'll just open the modal
+                document.getElementById('modal-title').textContent = 'Edit Coupon';
+                document.getElementById('coupon_id').value = couponId;
+                document.getElementById('coupon-form').action = 'update_coupon.php';
+                couponModal.classList.remove('hidden');
             });
         }
 
@@ -861,7 +803,7 @@ try {
                 deleteModal.classList.remove('hidden');
             });
         }
-        
+
         // Initialize copy buttons
         function initializeCopyButton(button) {
             button.addEventListener('click', function() {

@@ -1,11 +1,6 @@
 <?php
-// Include the auth header at the top of the file
-require_once "../includes/auth_header.php";
-
-// Initialize the session (if not already done in auth_header)
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+// Initialize the session
+session_start();
 
 // Check if the user is logged in, if not then redirect to login page
 if(!isset($_SESSION["user_id"])){
@@ -26,54 +21,35 @@ $search = isset($_GET['search']) ? $_GET['search'] : '';
 if ($db_connection_error) {
     $error_message = "Database connection error: " . $db_error_message;
 } else {
-    // Prepare query based on filters - includes shared coupons
-    $baseQuery = "SELECT c.*, 
-            CASE WHEN c.user_id = :user_id THEN 0 ELSE 1 END AS is_shared,
-            CASE WHEN c.user_id != :user_id THEN (SELECT name FROM users WHERE id = c.user_id) ELSE NULL END AS shared_by
-            FROM coupons c 
-            LEFT JOIN (
-                SELECT * FROM shared_coupons WHERE recipient_id = :user_id
-            ) sc ON c.id = sc.coupon_id
-            WHERE (c.user_id = :user_id OR sc.id IS NOT NULL)";
-    
+    // Prepare query based on filters
+    $sql = "SELECT * FROM coupons WHERE user_id = :user_id";
+
     // Add search condition if provided
-    $searchCondition = "";
     if(!empty($search)) {
-        $searchCondition = " AND (
-            c.coupon_name LIKE :search 
-            OR c.store LIKE :search 
-            OR c.coupon_code LIKE :search 
-            OR c.category LIKE :search
-        )";
+        $sql .= " AND (coupon_name LIKE :search OR category LIKE :search OR store LIKE :search OR coupon_code LIKE :search)";
     }
-    
-    // Combine base query with search condition
-    $sql = $baseQuery . $searchCondition;
-    
+
     // Add category filter if provided
     if(!empty($filter)) {
-        $sql .= " AND c.category = :filter";
+        $sql .= " AND category = :filter";
     }
 
     // Add sorting
     switch($sort) {
         case 'expiry_desc':
-            $sql .= " ORDER BY c.expiry_date DESC";
+            $sql .= " ORDER BY expiry_date DESC";
             break;
         case 'discount_desc':
-            $sql .= " ORDER BY c.discount DESC";
+            $sql .= " ORDER BY discount DESC";
             break;
         case 'discount_asc':
-            $sql .= " ORDER BY c.discount ASC";
+            $sql .= " ORDER BY discount ASC";
             break;
         case 'expiry_asc':
         default:
-            $sql .= " ORDER BY c.expiry_date ASC";
+            $sql .= " ORDER BY expiry_date ASC";
             break;
     }
-    
-    // Debug: Add this line temporarily to see the actual query
-    // echo "<!-- SQL Debug: " . $sql . " -->";
 
     // Prepare and execute the query
     try {
@@ -94,7 +70,7 @@ if ($db_connection_error) {
     } catch(PDOException $e) {
         $error_message = "Error fetching coupons: " . $e->getMessage();
     }
-        
+
     // Get available categories for filter dropdown
     try {
         $cat_stmt = $pdo->prepare("SELECT DISTINCT category FROM coupons WHERE user_id = :user_id");
@@ -104,7 +80,7 @@ if ($db_connection_error) {
     } catch(PDOException $e) {
         $categories = [];
     }
-    
+
     // Get all predefined categories from the categories table
     try {
         $all_cat_stmt = $pdo->query("SELECT name FROM categories ORDER BY name");
@@ -113,18 +89,8 @@ if ($db_connection_error) {
         $all_categories = [];
     }
 }
-
-// Get unread notification count
-$notification_count = 0;
-try {
-    $notif_stmt = $pdo->prepare("SELECT COUNT(*) FROM notifications WHERE user_id = :user_id AND is_read = 0");
-    $notif_stmt->bindParam(":user_id", $_SESSION["user_id"], PDO::PARAM_INT);
-    $notif_stmt->execute();
-    $notification_count = $notif_stmt->fetchColumn();
-} catch(PDOException $e) {
-    // Silently fail
-}
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -133,6 +99,7 @@ try {
     <title>Dashboard - Digital Coupon Organizer</title>
     <link href="../output.css" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+
     <style>
         .coupon-card {
             transition: transform 0.3s ease, box-shadow 0.3s ease;
@@ -149,26 +116,13 @@ try {
             50% { opacity: 1; transform: scale(1.2); }
             100% { opacity: 0; transform: scale(1); }
         }
-        
-        /* Toggle Switch Styling - Fixed Version */
-        #show-expired:checked ~ .dot {
-            transform: translateX(140%); /* Use a specific pixel value */
-            background-color: #84cc16; /* Lime-500 */
-        }
-        
-        #show-expired:checked ~ .block {
-            background-color: rgba(132, 204, 22, 0.2); /* Lime-500 with opacity */
-        }
-        
-        .dot {
-            transition: all 0.3s ease-in-out;
-        }
     </style>
 </head>
 <body class="bg-black text-white min-h-screen">
     <div id="copy-success" class="fixed top-4 right-4 bg-lime-500 text-black rounded-lg px-4 py-2 z-50 hidden">
         Coupon code copied!
     </div>
+
     <!-- Navbar -->
     <header class="py-4 lg:py-6 border-b border-white/10">
         <div class="max-w-7xl mx-auto px-4 lg:px-8">
@@ -179,36 +133,25 @@ try {
                     </a>
                     <nav class="hidden md:flex ml-10 space-x-8">
                         <a href="dashboard.php" class="text-lime-400 hover:text-lime-400">Dashboard</a>
-                        <a href="notifications.php" class="text-white/70 hover:text-lime-400 relative">
-                            Notifications
-                            <?php if($notification_count > 0): ?>
-                                <span class="absolute -top-2 -right-2 flex items-center justify-center bg-lime-400 text-black rounded-full w-5 h-5 text-xs font-bold"><?php echo $notification_count; ?></span>
-                            <?php endif; ?>
-                        </a>
                         <a href="faqs.php" class="text-white/70 hover:text-lime-400">FAQs</a>
                     </nav>
                 </div>
+                
                 <div class="flex items-center gap-6">
-                    <!-- Notification bell (mobile) -->
-                    <a href="notifications.php" class="md:hidden relative text-white/70 hover:text-lime-400">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
-                        <?php if($notification_count > 0): ?>
-                            <span class="absolute -top-2 -right-2 flex items-center justify-center bg-lime-400 text-black rounded-full w-5 h-5 text-xs font-bold"><?php echo $notification_count; ?></span>
-                        <?php endif; ?>
-                    </a>
+                    <!-- Mobile menu button -->
+                    <button id="mobile-menu-button" class="md:hidden text-white">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                    </button>
                     
                     <div class="relative">
                         <button id="user-menu-button" class="flex items-center gap-2 text-sm focus:outline-none">
-                            <?php if(!empty($_SESSION["profile_image"])): ?>
-                                <img src="../<?php echo htmlspecialchars($_SESSION["profile_image"]); ?>" class="w-8 h-8 rounded-full object-cover" alt="Profile">
-                            <?php else: ?>
-                                <div class="size-8 rounded-full bg-lime-400 flex items-center justify-center text-black font-medium">
-                                    <?php echo substr($_SESSION["name"], 0, 1); ?>
-                                </div>
-                            <?php endif; ?>
+                            <div class="size-8 rounded-full bg-lime-400 flex items-center justify-center text-black font-medium">
+                                <?php echo substr($_SESSION["name"], 0, 1); ?>
+                            </div>
                             <span class="hidden md:block"><?php echo htmlspecialchars($_SESSION["name"]); ?></span>
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
                         </button>
+                        
                         <!-- Dropdown menu -->
                         <div id="user-dropdown" class="hidden absolute right-0 mt-2 w-48 rounded-lg bg-neutral-900 border border-white/10 shadow-lg py-1 z-10">
                             <a href="profile.php" class="block px-4 py-2 text-sm hover:bg-white/5">Profile</a>
@@ -219,6 +162,7 @@ try {
                     </div>
                 </div>
             </div>
+            
             <!-- Mobile menu -->
             <div id="mobile-menu" class="md:hidden hidden pt-4 pb-3 border-t border-white/10 mt-4">
                 <div class="space-y-1">
@@ -237,25 +181,13 @@ try {
             </div>
         <?php endif; ?>
 
-        <?php if(isset($_GET['error'])): ?>
-            <div class="bg-red-500/20 border border-red-500 text-white px-4 py-3 rounded-lg mb-6">
-                <?php echo htmlspecialchars($_GET['error']); ?>
-            </div>
-        <?php endif; ?>
-
         <?php if(isset($_GET['success']) && $_GET['success'] === 'coupon_marked_used'): ?>
             <div class="bg-lime-500/20 border border-lime-500 text-white px-4 py-3 rounded-lg mb-6">
                 Coupon has been marked as used successfully.
             </div>
         <?php endif; ?>
-        
-        <?php if(isset($_GET['success']) && $_GET['success'] === 'coupon_shared'): ?>
-            <div class="bg-blue-500/20 border border-blue-500 text-white px-4 py-3 rounded-lg mb-6 pulsing-blue">
-                Coupon has been shared successfully!
-            </div>
-        <?php endif; ?>
-        
-        <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
+
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-8 ">
             <div>
                 <h1 class="text-3xl font-medium text-lime-400">Your Coupons</h1>
                 <p class="text-white/50 mt-1">Manage all your discount coupons in one place</p>
@@ -265,7 +197,7 @@ try {
                 Add New Coupon
             </button>
         </div>
-
+        
         <!-- Filters and Search -->
         <div class="bg-neutral-900 rounded-xl border border-white/10 p-4 mb-8">
             <form id="filter-form" class="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -300,18 +232,6 @@ try {
                     <button type="submit" class="w-full bg-white/10 hover:bg-white/15 text-white font-medium py-2 rounded-lg transition-colors">Apply Filters</button>
                 </div>
             </form>
-            
-            <!-- Expired Coupons Toggle -->
-            <div class="mt-4 flex items-center justify-end">
-                <label for="show-expired" class="flex items-center cursor-pointer">
-                    <span class="text-sm mr-3">Show Expired Coupons</span>
-                    <div class="relative">
-                        <input type="checkbox" id="show-expired" class="sr-only">
-                        <div class="block bg-neutral-800 w-14 h-7 rounded-full"></div>
-                        <div class="dot absolute left-1 top-1 bg-white w-5 h-5 rounded-full transition"></div>
-                    </div>
-                </label>
-            </div>
         </div>
         
         <!-- Coupons Grid -->
@@ -331,37 +251,14 @@ try {
             <?php else: ?>
                 <?php foreach($coupons as $coupon): ?>
                     <?php 
-                    // Improved expiration calculation
-                    $expiry_timestamp = strtotime($coupon['expiry_date'] . ' 23:59:59'); // Set to end of expiry day
-                    $current_timestamp = time();
-                    $seconds_left = $expiry_timestamp - $current_timestamp;
-                    $days_left = floor($seconds_left / (60 * 60 * 24));
-                    $hours_left = floor(($seconds_left % (60 * 60 * 24)) / 3600);
-                    
-                    $is_expired = $seconds_left < 0;
+                    $is_expired = strtotime($coupon['expiry_date']) < time();
+                    $days_left = round((strtotime($coupon['expiry_date']) - time()) / (60 * 60 * 24));
                     $is_used = $coupon['is_used'] == 1;
-                    $is_shared = isset($coupon['is_shared']) && $coupon['is_shared'] == 1;
-                    $border_class = $is_expired ? 'border-red-500/50' : ($is_used ? 'border-gray-500/50 opacity-60' : 'border-white/10');
-                    $highlight_color = $is_expired ? 'red' : ($is_used ? 'gray' : 'lime');
-                    
-                    // More precise expiration message
-                    $expiry_message = '';
-                    if ($is_expired) {
-                        $expiry_message = 'Expired';
-                    } else if ($is_used) {
-                        $expiry_message = 'Used';
-                    } else if ($days_left == 0) {
-                        $expiry_message = $hours_left > 0 ? "Expires in {$hours_left}h" : "Expires in <1h";
-                    } else if ($days_left == 1) {
-                        $expiry_message = "Expires tomorrow";
-                    } else {
-                        $expiry_message = "{$days_left} days left";
-                    }
                     ?>
-                    <div class="coupon-card bg-neutral-900 rounded-xl border <?php echo $border_class; ?> overflow-hidden group">
+                    <div class="coupon-card bg-neutral-900 rounded-xl border <?php echo $is_expired ? 'border-red-500/50' : ($is_used ? 'border-gray-500/50 opacity-60' : 'border-white/10'); ?> overflow-hidden group">
                         <div class="flex items-center justify-between px-4 py-3 border-b border-white/10">
                             <div class="flex items-center">
-                                <span class="inline-flex items-center justify-center size-10 rounded-lg bg-<?php echo $highlight_color; ?>-400/10 text-<?php echo $highlight_color; ?>-400">
+                                <span class="inline-flex items-center justify-center size-10 rounded-lg bg-<?php echo $is_expired ? 'red' : ($is_used ? 'gray' : 'lime'); ?>-400/10 text-<?php echo $is_expired ? 'red' : ($is_used ? 'gray' : 'lime'); ?>-400">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
                                 </span>
                                 <div class="ml-3">
@@ -370,41 +267,28 @@ try {
                                 </div>
                             </div>
                             <div class="text-right">
-                                <div class="text-xl font-bold text-<?php echo $highlight_color; ?>-400"><?php echo $coupon['discount']; ?>%</div>
-                                <div class="text-xs text-white/50"><?php echo $expiry_message; ?></div>
+                                <div class="text-xl font-bold text-<?php echo $is_expired ? 'red' : ($is_used ? 'gray' : 'lime'); ?>-400"><?php echo $coupon['discount']; ?>%</div>
+                                <div class="text-xs text-white/50"><?php echo $is_expired ? 'Expired' : ($is_used ? 'Used' : ($days_left == 0 ? 'Expires today' : ($days_left == 1 ? '1 day left' : $days_left.' days left'))); ?></div>
                             </div>
                         </div>
-                        <div class="p-4 <?php echo $is_shared ? 'bg-gradient-to-b from-neutral-900 to-blue-950/30' : ''; ?>">
+                        
+                        <div class="p-4">
                             <div class="flex justify-between items-center mb-3">
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-white/10"><?php echo htmlspecialchars($coupon['category']); ?></span>
                                 <span class="text-sm text-white/50">Expires: <?php echo date('M d, Y', strtotime($coupon['expiry_date'])); ?></span>
                             </div>
+                            
                             <div class="relative">
                                 <div class="bg-neutral-800 p-2 rounded text-center font-mono text-lg select-all"><?php echo htmlspecialchars($coupon['coupon_code']); ?></div>
                                 <button class="copy-btn absolute right-2 top-2 text-white/50 hover:text-white" data-code="<?php echo htmlspecialchars($coupon['coupon_code']); ?>">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                                 </button>
                             </div>
+                            
                             <?php if(!empty($coupon['description'])): ?>
                                 <p class="mt-3 text-sm text-white/70"><?php echo htmlspecialchars($coupon['description']); ?></p>
                             <?php endif; ?>
-                            <!-- Add expiry alert status information -->
-                            <?php if(!$is_expired && !$is_used && $days_left <= 2): ?>
-                                <div class="mt-2 flex items-center text-xs">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-yellow-500 mr-1"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-                                    <span class="text-yellow-500">
-                                        <?php 
-                                        if ($days_left == 0) {
-                                            echo $hours_left > 0 ? "Expires in {$hours_left} hours" : "Expires very soon";
-                                        } else if ($days_left == 1) {
-                                            echo "Expires tomorrow" . (($hours_left > 12) ? "" : " - Email alert sent");
-                                        } else {
-                                            echo "Expires in {$days_left} days";
-                                        }
-                                        ?>
-                                    </span>
-                                </div>
-                            <?php endif; ?>
+                            
                             <div class="mt-4 pt-3 border-t border-white/10 flex justify-between">
                                 <div class="flex space-x-2">
                                     <button class="edit-coupon-btn text-white/70 hover:text-white" data-id="<?php echo $coupon['id']; ?>">
@@ -413,10 +297,8 @@ try {
                                     <button class="delete-coupon-btn text-white/70 hover:text-red-500" data-id="<?php echo $coupon['id']; ?>">
                                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                                     </button>
-                                    <button class="share-coupon-btn text-white/70 hover:text-blue-400" data-id="<?php echo $coupon['id']; ?>" data-name="<?php echo htmlspecialchars($coupon['coupon_name']); ?>">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
-                                    </button>
                                 </div>
+                                
                                 <?php if(!$is_expired && !$is_used): ?>
                                     <form action="mark_used.php" method="post" class="inline">
                                         <input type="hidden" name="coupon_id" value="<?php echo $coupon['id']; ?>">
@@ -445,6 +327,7 @@ try {
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                     </button>
                 </div>
+                
                 <form id="coupon-form" action="add_coupon.php" method="post" class="space-y-4">
                     <input type="hidden" id="coupon_id" name="coupon_id" value="">
                     
@@ -463,6 +346,7 @@ try {
                             <label for="discount" class="block text-sm font-medium mb-2">Discount (%)</label>
                             <input type="number" id="discount" name="discount" min="0" max="100" step="0.01" class="w-full bg-neutral-800 border border-white/10 rounded-lg px-4 py-3" required>
                         </div>
+                        
                         <div>
                             <label for="expiry_date" class="block text-sm font-medium mb-2">Expiry Date</label>
                             <input type="date" id="expiry_date" name="expiry_date" class="w-full bg-neutral-800 border border-white/10 rounded-lg px-4 py-3 appearance-none" required>
@@ -477,7 +361,6 @@ try {
                     <div>
                         <label for="category" class="block text-sm font-medium mb-2">Category</label>
                         <select id="category" name="category" class="w-full bg-neutral-800 border border-white/10 rounded-lg px-4 py-3 text-white appearance-none" required>
-                            <option value="">Select Category</option>
                             <?php if (isset($all_categories)): ?>
                                 <?php foreach($all_categories as $cat): ?>
                                     <option value="<?php echo htmlspecialchars($cat); ?>"><?php echo htmlspecialchars($cat); ?></option>
@@ -490,8 +373,8 @@ try {
                                 <option value="Entertainment">Entertainment</option>
                                 <option value="Beauty">Beauty</option>
                                 <option value="Home">Home</option>
-                                <option value="Other">Other (Custom)</option>
                             <?php endif; ?>
+                            <option value="Other">Other (Custom)</option>
                         </select>
                     </div>
                     
@@ -520,38 +403,18 @@ try {
             <div class="bg-neutral-900 rounded-2xl border border-white/10 p-6 w-full max-w-md relative mx-auto my-8">
                 <h3 class="text-xl font-medium mb-4">Delete Coupon</h3>
                 <p class="text-white/70 mb-6">Are you sure you want to delete this coupon? This action cannot be undone.</p>
-                <form id="delete-form" action="delete_coupon.php" method="post" class="flex flex-col sm:flex-row gap-4">
-                    <input type="hidden" id="delete_coupon_id" name="coupon_id">
+                
+                <div class="flex flex-col sm:flex-row gap-4">
                     <button id="cancel-delete" class="flex-1 bg-white/10 text-white font-medium py-3 rounded-lg hover:bg-white/15 transition-colors">Cancel</button>
-                    <button type="submit" class="flex-1 bg-red-500 text-white font-medium py-3 rounded-lg hover:bg-red-600 transition-colors">Delete</button>
-                </form>
+                    <form id="delete-form" action="delete_coupon.php" method="post" class="flex-1">
+                        <input type="hidden" id="delete_coupon_id" name="coupon_id">
+                        <button type="submit" class="w-full bg-red-500 text-white font-medium py-3 rounded-lg hover:bg-red-600 transition-colors">Delete</button>
+                    </form>
+                </div>
             </div>
         </div>
     </div>
-    
-    <!-- Share Coupon Modal -->
-    <div id="share-modal" class="fixed inset-0 z-50 hidden overflow-y-auto">
-        <div class="absolute inset-0 bg-black/70"></div>
-        <div class="flex items-center justify-center min-h-screen p-4">
-            <div class="bg-neutral-900 rounded-2xl border border-blue-500/30 shadow-[0_0_20px_rgba(59,130,246,0.3)] p-6 w-full max-w-md relative mx-auto my-8">
-                <h3 class="text-xl font-medium mb-4">Share Coupon</h3>
-                <p id="share-coupon-name" class="text-blue-400 mb-6"></p>
-                <form id="share-form" action="share_coupon.php" method="post" class="space-y-4">
-                    <input type="hidden" id="share_coupon_id" name="coupon_id">
-                    <div>
-                        <label for="recipient_email" class="block text-sm font-medium mb-2">Recipient's Email</label>
-                        <input type="email" id="recipient_email" name="recipient_email" class="w-full bg-neutral-800 border border-white/10 rounded-lg px-4 py-3" placeholder="Enter email address" required>
-                    </div>
 
-                    <div class="flex flex-col sm:flex-row gap-4">
-                        <button type="button" id="cancel-share" class="flex-1 bg-white/10 text-white font-medium py-3 rounded-lg hover:bg-white/15 transition-colors">Cancel</button>
-                        <button type="submit" class="flex-1 bg-blue-500 text-white font-medium py-3 rounded-lg hover:bg-blue-600 transition-colors">Share Coupon</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-    
     <style>
         /* Fix select background and input styling */
         select {
@@ -560,8 +423,25 @@ try {
             background-position: right 0.75rem center;
             background-size: 16px 16px;
         }
+        
         input[type="date"] {
             color-scheme: dark;
+        }
+        
+        .coupon-card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .coupon-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px -5px rgba(163, 230, 53, 0.1);
+        }
+        .copy-animation {
+            animation: copy-pulse 1s ease;
+        }
+        @keyframes copy-pulse {
+            0% { opacity: 0; transform: scale(0.5); }
+            50% { opacity: 1; transform: scale(1.2); }
+            100% { opacity: 0; transform: scale(1); }
         }
     </style>
 
@@ -569,35 +449,26 @@ try {
         // Modal functionality
         const couponModal = document.getElementById('coupon-modal');
         const deleteModal = document.getElementById('delete-modal');
-        const shareModal = document.getElementById('share-modal');
-        const customCategoryContainer = document.getElementById('custom-category-container');
         const addCouponBtn = document.getElementById('add-coupon-btn');
         const addFirstCouponBtn = document.getElementById('add-first-coupon-btn');
         const closeModalBtn = document.getElementById('close-modal');
         const cancelDeleteBtn = document.getElementById('cancel-delete');
-        const cancelShareBtn = document.getElementById('cancel-share');
         const categorySelect = document.getElementById('category');
+        const customCategoryContainer = document.getElementById('custom-category-container');
         const customCategoryInput = document.getElementById('custom_category');
         const searchInput = document.getElementById('search');
         const filterInput = document.getElementById('filter');
         const sortInput = document.getElementById('sort');
         const couponForm = document.getElementById('coupon-form');
-        const showExpiredToggle = document.getElementById('show-expired');
-
+        
         // Set today as the min date for expiry date
         document.addEventListener('DOMContentLoaded', function() {
             const today = new Date().toISOString().split('T')[0];
             document.getElementById('expiry_date').min = today;
-
-            // Setup instant search functionality
+            
+            // Setup instant search
             setupInstantSearch();
-
-            // Initialize the expired coupons toggle
-            initializeExpiredToggle();
-
-            // Initialize event listeners for edit, delete and copy buttons
-            initializeEventListeners();
-
+            
             // Setup category select change handler
             if (categorySelect) {
                 categorySelect.addEventListener('change', function() {
@@ -610,47 +481,38 @@ try {
                     }
                 });
             }
-
+            
             // Setup form submission to handle custom category
             if (couponForm) {
                 couponForm.addEventListener('submit', function(e) {
                     if (categorySelect.value === 'Other' && customCategoryInput.value.trim() !== '') {
                         // Use the custom category instead of "Other"
                         const customCategoryValue = customCategoryInput.value.trim();
-
+                        
                         // Create hidden input to send the actual category value
                         const hiddenInput = document.createElement('input');
                         hiddenInput.type = 'hidden';
                         hiddenInput.name = 'category';
                         hiddenInput.value = customCategoryValue;
-
+                        
                         // Replace the select value with our custom value
                         this.appendChild(hiddenInput);
                     }
                 });
             }
         });
-
+        
         // Setup instant search functionality
         function setupInstantSearch() {
             let debounceTimeout;
-
-            // Search input handler - fix form submission
+            
+            // Search input handler
             if (searchInput) {
                 searchInput.addEventListener('input', function() {
                     clearTimeout(debounceTimeout);
                     debounceTimeout = setTimeout(() => {
                         performSearch();
                     }, 300); // Wait 300ms after user stops typing
-                });
-            }
-
-            // Fix form submission to use our search instead of default behavior
-            const filterForm = document.getElementById('filter-form');
-            if (filterForm) {
-                filterForm.addEventListener('submit', function(e) {
-                    e.preventDefault(); // Prevent standard form submission
-                    performSearch();
                 });
             }
             
@@ -663,64 +525,49 @@ try {
                 sortInput.addEventListener('change', performSearch);
             }
         }
-
+        
         function performSearch() {
             const searchValue = searchInput ? searchInput.value : '';
             const filterValue = filterInput ? filterInput.value : '';
             const sortValue = sortInput ? sortInput.value : 'expiry_asc';
-            const showExpired = showExpiredToggle ? showExpiredToggle.checked : true;
-
-            console.log("Performing search with:", { search: searchValue, filter: filterValue, sort: sortValue, showExpired: showExpired });
-
+            
             // Create URL with parameters
             const url = `dashboard.php?search=${encodeURIComponent(searchValue)}&filter=${encodeURIComponent(filterValue)}&sort=${encodeURIComponent(sortValue)}`;
             
-            // Show loading indicator
-            const couponsContainer = document.getElementById('coupons-container');
-            if (couponsContainer) {
-                couponsContainer.classList.add('opacity-50');
-                couponsContainer.innerHTML += `
-                    <div id="search-loader" class="col-span-3 flex justify-center items-center">
-                        <div class="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-lime-400"></div>
-                    </div>`;
-            }
-            
-            // Use AJAX to fetch results without page reload
-            fetch(url)
-                .then(response => response.text())
-                .then(html => {
-                    try {
+            // Navigate to the URL without full page reload if fetch is available
+            if (window.fetch) {
+                fetch(url)
+                    .then(response => response.text())
+                    .then(html => {
                         // Parse the HTML response
                         const parser = new DOMParser();
                         const doc = parser.parseFromString(html, 'text/html');
                         
                         // Replace just the coupons container with the new content
                         const newCouponsContainer = doc.getElementById('coupons-container');
-                        if (newCouponsContainer && couponsContainer) {
-                            couponsContainer.innerHTML = newCouponsContainer.innerHTML;
-                            couponsContainer.classList.remove('opacity-50');
-                            
-                            // Update URL without page reload for bookmarking/sharing
-                            history.pushState({}, '', url);
-                            
-                            // Apply expired coupon filter to the new content
-                            filterExpiredCoupons(showExpired);
+                        const currentCouponsContainer = document.getElementById('coupons-container');
+                        
+                        if (newCouponsContainer && currentCouponsContainer) {
+                            currentCouponsContainer.innerHTML = newCouponsContainer.innerHTML;
                             
                             // Reinitialize event listeners for the new content
                             initializeEventListeners();
+                            
+                            // Update URL without page reload
+                            history.pushState({}, '', url);
                         } else {
-                            console.error("Could not find coupon containers");
-                            window.location.href = url; // Fallback to full page reload
+                            // Fallback to full page reload if containers not found
+                            window.location.href = url;
                         }
-                    } catch (e) {
-                        console.error("Error processing response:", e);
+                    })
+                    .catch(error => {
+                        console.error('Error during search:', error);
                         window.location.href = url; // Fallback to full page reload
-                    }
-                })
-                .catch(error => {
-                    console.error('Error during search:', error);
-                    window.location.href = url; // Fallback to full page reload
-                });
+                    });
+            } else {
+                // Fallback for browsers that don't support fetch
+                window.location.href = url;
+            }
         }
         
         function initializeEventListeners() {
@@ -728,45 +575,6 @@ try {
             document.querySelectorAll('.copy-btn').forEach(initializeCopyButton);
             document.querySelectorAll('.edit-coupon-btn').forEach(initializeEditButton);
             document.querySelectorAll('.delete-coupon-btn').forEach(initializeDeleteButton);
-            document.querySelectorAll('.share-coupon-btn').forEach(initializeShareButton);
-        }
-
-        // Initialize the expired coupons toggle from localStorage
-        function initializeExpiredToggle() {
-            if (showExpiredToggle) {
-                // Get saved preference from localStorage (default to false/off)
-                const showExpired = localStorage.getItem('showExpiredCoupons') === 'true';
-                
-                // Set the toggle to match saved preference
-                showExpiredToggle.checked = showExpired;
-                
-                // Add event listener for toggle changes
-                showExpiredToggle.addEventListener('change', function() {
-                    // Save preference to localStorage
-                    localStorage.setItem('showExpiredCoupons', this.checked);
-                    
-                    // Update display
-                    performSearch();
-                });
-                
-                // Apply filter on initial load
-                filterExpiredCoupons(showExpired);
-            }
-        }
-        
-        // Filter expired coupons in the UI
-        function filterExpiredCoupons(showExpired) {
-            const couponCards = document.querySelectorAll('.coupon-card');
-            
-            couponCards.forEach(card => {
-                const isExpired = card.classList.contains('border-red-500/50');
-                
-                if (isExpired && !showExpired) {
-                    card.classList.add('hidden');
-                } else {
-                    card.classList.remove('hidden');
-                }
-            });
         }
         
         // Open modal for adding new coupon
@@ -799,60 +607,20 @@ try {
                 couponModal.classList.add('hidden');
             });
         }
-
+        
         // Initialize edit buttons
         function initializeEditButton(button) {
             button.addEventListener('click', function() {
                 const couponId = this.getAttribute('data-id');
-                
-                // Fetch coupon data from the server
-                fetch(`get_coupon.php?id=${couponId}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            // Populate the form with the coupon data
-                            document.getElementById('coupon_name').value = data.coupon.coupon_name;
-                            document.getElementById('coupon_code').value = data.coupon.coupon_code;
-                            document.getElementById('discount').value = data.coupon.discount;
-                            document.getElementById('expiry_date').value = data.coupon.expiry_date;
-                            document.getElementById('store').value = data.coupon.store;
-                            document.getElementById('description').value = data.coupon.description || '';
-                            
-                            // Set the category
-                            const categorySelect = document.getElementById('category');
-                            const categoryOptions = Array.from(categorySelect.options);
-                            const categoryOption = categoryOptions.find(option => option.value === data.coupon.category);
-                            
-                            if (categoryOption) {
-                                categorySelect.value = data.coupon.category;
-                            } else {
-                                // If category not in list, select "Other" and set custom category
-                                const otherOption = categoryOptions.find(option => option.value === 'Other');
-                                if (otherOption) {
-                                    categorySelect.value = 'Other';
-                                    document.getElementById('custom_category').value = data.coupon.category;
-                                    document.getElementById('custom-category-container').classList.remove('hidden');
-                                }
-                            }
-                            
-                            // Update the modal title and form action
-                            document.getElementById('modal-title').textContent = 'Edit Coupon';
-                            document.getElementById('coupon_id').value = couponId;
-                            document.getElementById('coupon-form').action = 'update_coupon.php';
-                            
-                            // Show the modal
-                            couponModal.classList.remove('hidden');
-                        } else {
-                            alert('Failed to load coupon data: ' + data.message);
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error fetching coupon data:', error);
-                        alert('Failed to load coupon data. Please try again.');
-                    });
+                // In a real app, you would fetch the coupon data via AJAX
+                // For demo purposes, we'll just open the modal
+                document.getElementById('modal-title').textContent = 'Edit Coupon';
+                document.getElementById('coupon_id').value = couponId;
+                document.getElementById('coupon-form').action = 'update_coupon.php';
+                couponModal.classList.remove('hidden');
             });
         }
-
+        
         // Initialize delete buttons
         function initializeDeleteButton(button) {
             button.addEventListener('click', function() {
@@ -870,14 +638,12 @@ try {
                     // Show success message
                     const copySuccess = document.getElementById('copy-success');
                     copySuccess.classList.remove('hidden');
-                    
-                    // Add animation to button
-                    this.classList.add('copy-animation');
-                    
                     setTimeout(() => {
                         copySuccess.classList.add('hidden');
                     }, 2000);
                     
+                    // Add animation to button
+                    this.classList.add('copy-animation');
                     setTimeout(() => {
                         this.classList.remove('copy-animation');
                     }, 1000);
@@ -885,52 +651,18 @@ try {
             });
         }
         
-        // Initialize share buttons - FIXED VERSION
-        function initializeShareButton(button) {
-            button.addEventListener('click', function(e) {
-                // Prevent default behavior and stop event propagation
-                e.preventDefault();
-                e.stopPropagation();
-                
-                // Get coupon info from data attributes
-                const couponId = this.getAttribute('data-id');
-                const couponName = this.getAttribute('data-name');
-                
-                // Update modal
-                document.getElementById('share-coupon-name').textContent = 'Share "' + couponName + '" with someone';
-                document.getElementById('share_coupon_id').value = couponId;
-                
-                // Show modal
-                if (shareModal) {
-                    shareModal.classList.remove('hidden');
-                } else {
-                    console.error('Share modal not found in DOM!');
-                }
-            });
-        }
-
-        // Make sure to apply event listeners to any existing share buttons
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('DOM loaded - initializing share buttons');
-            const shareButtons = document.querySelectorAll('.share-coupon-btn');
-            console.log('Found', shareButtons.length, 'share buttons');
-            shareButtons.forEach(initializeShareButton);
-        });
-
-        // Make sure all modals are properly initialized
+        // Apply event listeners to existing elements
+        document.querySelectorAll('.edit-coupon-btn').forEach(initializeEditButton);
+        document.querySelectorAll('.delete-coupon-btn').forEach(initializeDeleteButton);
+        document.querySelectorAll('.copy-btn').forEach(initializeCopyButton);
+        
+        // Cancel delete
         if (cancelDeleteBtn) {
             cancelDeleteBtn.addEventListener('click', function() {
                 deleteModal.classList.add('hidden');
             });
         }
         
-        if (cancelShareBtn) {
-            cancelShareBtn.addEventListener('click', function() {
-                document.getElementById('share-form').reset();
-                shareModal.classList.add('hidden');
-            });
-        }
-
         // User dropdown
         const userMenuButton = document.getElementById('user-menu-button');
         const userDropdown = document.getElementById('user-dropdown');
@@ -947,7 +679,7 @@ try {
                 }
             });
         }
-
+        
         // Mobile menu
         const mobileMenuButton = document.getElementById('mobile-menu-button');
         const mobileMenu = document.getElementById('mobile-menu');
